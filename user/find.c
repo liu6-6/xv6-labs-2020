@@ -29,7 +29,7 @@ void find(char* dir, char* filename) {
             while (*p != '/') p--;
 
             if (strcmp(p + 1, filename) == 0) {
-                printf("%s\n", dir);
+                fprintf(1, "%s\n", dir);
             }
             close(fd);
             break;
