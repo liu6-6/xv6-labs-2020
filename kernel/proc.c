@@ -277,6 +277,9 @@ fork(void)
 
   np->parent = p;
 
+  //Copy mask from parent to child.(lhf)
+  np->mask = p->mask;
+
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
