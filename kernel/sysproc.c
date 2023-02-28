@@ -6,8 +6,9 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
-#include <stdlib.h>
 #include "sysinfo.h"
+
+struct sysinfo realinfo;
 
 
 
@@ -114,13 +115,13 @@ sys_trace(void)
 uint64
 sys_sysinfo(void)
 {
-  struct sysinfo* info;
-  if (argaddr(0, (uint64 *)info) < 0)
+  struct sysinfo *info;
+  if (argaddr(0, (uint64 *)&info) < 0)
     return -1;
-  struct sysinfo* realinfo = (struct sysinfo*) malloc(sizeof(struct sysinfo));
-  realinfo->freemem = kfreeBYtes();
-  realinfo->nproc = procNUM();
-  if (copyout(p->pagetable, info, realinfo, sizeof(struct sysinfo)) < 0)
+  realinfo.freemem = kfreeBYtes();
+  realinfo.nproc = procNUM();
+  struct proc *p = myproc();
+  if (copyout(p->pagetable, (uint64)info, (char *)&realinfo, sizeof(struct sysinfo)) < 0)
     return -1;
   return 0;
 }
