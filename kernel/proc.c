@@ -106,6 +106,12 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
+  p->kernel_pagetable = copy_kernel_pagetable();
+
+  // struct proc *p;
+  // for (p = proc; p < &proc[NPROC]; p++) {
+
+  // }
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -139,6 +145,9 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  if (p->kernel_pagetable) 
+    kfree((void *) p->kernel_pagetable);
+  p->kernel_pagetable = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -479,10 +488,16 @@ scheduler(void)
         // It should have changed its p->state before coming back.
         c->proc = 0;
 
+        //write satp
+        w_satp(MAKE_SATP(p->kernel_pagetable));
+        sfence_vma();
+
         found = 1;
       }
       release(&p->lock);
     }
+
+    kvminithart();
 #if !defined (LAB_FS)
     if(found == 0) {
       intr_on();

@@ -47,6 +47,17 @@ kvminit()
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 }
 
+pagetable_t copy_kernel_pagetable(void) {
+  pagetable_t new_pagetable = (pagetable_t) kalloc();
+  memset(new_pagetable, 0, PGSIZE);
+
+  for (int i = 0; i < 512; i++) {
+    new_pagetable[i] = kernel_pagetable[i];
+  }
+
+  return new_pagetable;
+}
+
 // Switch h/w page table register to the kernel's page table,
 // and enable paging.
 void

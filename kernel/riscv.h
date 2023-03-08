@@ -324,7 +324,7 @@ sfence_vma()
 #define PGSHIFT 12  // bits of offset within a page
 
 #define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
-#define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1))
+#define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1)) // get a num low 12 bit set as 0, other bits keep the same
 
 #define PTE_V (1L << 0) // valid
 #define PTE_R (1L << 1)
@@ -348,7 +348,7 @@ sfence_vma()
 // MAXVA is actually one bit less than the max allowed by
 // Sv39, to avoid having to sign-extend virtual addresses
 // that have the high bit set.
-#define MAXVA (1L << (9 + 9 + 9 + 12 - 1))
+#define MAXVA (1L << (9 + 9 + 9 + 12 - 1)) // 0x04 00 00 00
 
 typedef uint64 pte_t;
 typedef uint64 *pagetable_t; // 512 PTEs
