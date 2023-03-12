@@ -323,8 +323,8 @@ sfence_vma()
 #define PGSIZE 4096 // bytes per page
 #define PGSHIFT 12  // bits of offset within a page
 
-#define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
-#define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1)) // get a num low 12 bit set as 0, other bits keep the same
+#define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))// page number xiang shang quzheng
+#define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1)) // get a num low 12 bit set as 0, other bits keep the same.page number xiang xia quzheng
 
 #define PTE_V (1L << 0) // valid
 #define PTE_R (1L << 1)

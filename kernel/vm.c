@@ -30,10 +30,10 @@ kvminit()
   // virtio mmio disk interface
   kvmmap(VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
 
-  // CLINT
+  // CLINT 
   kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
 
-  // PLIC
+  // PLIC Platform-level Interrupt Controller
   kvmmap(PLIC, PLIC, 0x400000, PTE_R | PTE_W);
 
   // map kernel text executable and read-only.
@@ -162,8 +162,8 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   uint64 a, last;
   pte_t *pte;
 
-  a = PGROUNDDOWN(va);
-  last = PGROUNDDOWN(va + size - 1);
+  a = PGROUNDDOWN(va);// virtual page number of va
+  last = PGROUNDDOWN(va + size - 1); // virtual page number of va + size - 1
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
@@ -173,7 +173,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     if(a == last)
       break;
     a += PGSIZE;
-    pa += PGSIZE;
+    pa += PGSIZE;// allocated physical pages are continuous
   }
   return 0;
 }
@@ -195,11 +195,11 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: walk");
     if((*pte & PTE_V) == 0)
       panic("uvmunmap: not mapped");
-    if(PTE_FLAGS(*pte) == PTE_V)
+    if(PTE_FLAGS(*pte) == PTE_V) // if PTE_FLAGS(*pte) is not only PTE_V, the pte is a leaf? will this situation happen?
       panic("uvmunmap: not a leaf");
     if(do_free){
       uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+      kfree((void*)pa); // resycle a physical page
     }
     *pte = 0;
   }
@@ -248,8 +248,8 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   oldsz = PGROUNDUP(oldsz);
   for(a = oldsz; a < newsz; a += PGSIZE){
     mem = kalloc();
-    if(mem == 0){
-      uvmdealloc(pagetable, a, oldsz);
+    if(mem == 0){ // kalloc() will return 0, if no page can be allocated. 
+      uvmdealloc(pagetable, a, oldsz); // remove the allocted pages from oldsz to a
       return 0;
     }
     memset(mem, 0, PGSIZE);
@@ -273,7 +273,7 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
     return oldsz;
 
   if(PGROUNDUP(newsz) < PGROUNDUP(oldsz)){
-    int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
+    int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE; 
     uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
   }
 
@@ -288,13 +288,13 @@ freewalk(pagetable_t pagetable)
   // there are 2^9 = 512 PTEs in a page table.
   for(int i = 0; i < 512; i++){
     pte_t pte = pagetable[i];
-    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){// youxianji == dayu &&
       // this PTE points to a lower-level page table.
       uint64 child = PTE2PA(pte);
       freewalk((pagetable_t)child);
       pagetable[i] = 0;
     } else if(pte & PTE_V){
-      panic("freewalk: leaf");
+      panic("freewalk: leaf"); // if leaf mappings have not been removed
     }
   }
   kfree((void*)pagetable);
@@ -397,7 +397,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
-    n = PGSIZE - (srcva - va0);
+    n = PGSIZE - (srcva - va0);// offset = srcva - va0
     if(n > len)
       n = len;
     memmove(dst, (void *)(pa0 + (srcva - va0)), n);
