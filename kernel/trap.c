@@ -125,7 +125,10 @@ usertrapret(void)
   // switches to the user page table, restores user registers,
   // and switches to user mode with sret.
   uint64 fn = TRAMPOLINE + (userret - trampoline);
+  // if (p->pid == 3) printf("bug pid = %d\n", p->pid);
+  // if (p->pid == 3) printf("bug process sz = %d\n", p->sz);
   ((void (*)(uint64,uint64))fn)(TRAPFRAME, satp);
+  // printf("130\n");
 }
 
 // interrupts and exceptions from kernel code go here via kernelvec,

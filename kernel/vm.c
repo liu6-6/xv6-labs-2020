@@ -47,16 +47,39 @@ kvminit()
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 }
 
+void
+kvmmap_kernel_pagetable(pagetable_t pagetable ,uint64 va, uint64 pa, uint64 sz, int perm)
+{
+  if(mappages(pagetable, va, sz, pa, perm) != 0)
+    panic("kvmmap");
+}
+
 pagetable_t copy_kernel_pagetable(void) {
   pagetable_t new_pagetable = (pagetable_t) kalloc();
   memset(new_pagetable, 0, PGSIZE);
 
-  for (int i = 0; i < 512; i++) {
+  for (int i = 1; i < 512; i++) {
     new_pagetable[i] = kernel_pagetable[i];
   }
+  
+  // add map in kernel pagetable to process's kernel_pagetable
+  // reason:in user virtual memory(int entry 0 of the highest level of kernel pagetable), diffrent processes cant share the kernel_pagetable
+    // uart registers
+  kvmmap_kernel_pagetable(new_pagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+
+  // virtio mmio disk interface
+  kvmmap_kernel_pagetable(new_pagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+
+  // CLINT 
+  kvmmap_kernel_pagetable(new_pagetable, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+
+  // PLIC Platform-level Interrupt Controller
+  kvmmap_kernel_pagetable(new_pagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
 
   return new_pagetable;
 }
+
+
 
 // Switch h/w page table register to the kernel's page table,
 // and enable paging.
@@ -389,7 +412,9 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 // Return 0 on success, -1 on error.
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
-{
+{ 
+  return copyin_new(pagetable, dst, srcva, len);
+
   uint64 n, va0, pa0;
 
   while(len > 0){
@@ -415,7 +440,9 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 // Return 0 on success, -1 on error.
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
-{
+{ 
+  return copyinstr_new(pagetable, dst, srcva, max);
+
   uint64 n, va0, pa0;
   int got_null = 0;
 
@@ -452,27 +479,88 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   }
 }
 
-int first_level = 1;
-int dir_level = 1;
+// int first_level = 1;
+// int dir_level = 1;
 
 void vmprint(pagetable_t pagetable) {
-  if (first_level) {
-    printf("page table %p\n", pagetable);
-    first_level = 0;
+  printf("page table %p\n", pagetable);
+
+  for (int i = 0; i < 512; i++) {
+    pte_t pte2 = pagetable[i];
+    if (pte2 & PTE_V) {
+      printf("..%d: pte %p pa %p\n", i, pte2, PTE2PA(pte2));
+      pagetable_t level1 = (pagetable_t) PTE2PA(pte2);
+      for (int j = 0; j < 512; j++) {
+        pte_t pte1 = level1[j];
+        if (pte1 & PTE_V) {
+          printf(".. ..%d: pte %p pa %p\n", j, pte1, PTE2PA(pte1));
+          pagetable_t level0 = (pagetable_t) PTE2PA(pte1);
+          for (int k = 0; k < 512; k++) {
+            pte_t pte0 = level0[k];
+            if (pte0 & PTE_V) {
+              printf(".. .. ..%d: pte %p pa %p\n", k, pte0, PTE2PA(pte0));
+            }
+          }
+        }
+        
+      }
+    }
   }
+  // if (first_level) {
+  //   printf("page table %p\n", pagetable);
+  //   first_level = 0;
+  // }
+  // for (int i = 0; i < 512; i++) {
+  //   pte_t pte = pagetable[i];
+  //   if (pte & PTE_V) {
+  //     for (int j = 0; j < dir_level - 1; j++) printf(".. ");
+  //     printf("..%d: pte %p pa %p\n", i, pte, PTE2PA(pte));
+
+  //     uint64 child = PTE2PA(pte);
+      
+  //     dir_level++;
+  //     if(dir_level <= 3) {
+  //       vmprint((pagetable_t) child);
+  //     }
+  //     dir_level--;
+  //   }
+  // }
+}
+
+void vmprint1(pagetable_t pagetable) {
   for (int i = 0; i < 512; i++) {
     pte_t pte = pagetable[i];
-    if (pte & PTE_V) {
-      for (int j = 0; j < dir_level - 1; j++) printf(".. ");
-      printf("..%d: pte %p pa %p\n", i, pte, PTE2PA(pte));
+    if (pte & PTE_V) printf("..%d: pte %p pa %p\n", i, pte, PTE2PA(pte));
+  }
+}
 
-      uint64 child = PTE2PA(pte);
-      
-      dir_level++;
-      if(dir_level <= 3) {
-        vmprint((pagetable_t) child);
-      }
-      dir_level--;
+void Kvmprint(void) {
+  vmprint1(kernel_pagetable);
+}
+
+void usermapTokernel_pagetable(pagetable_t pagetable, pagetable_t kernel_pagetable, uint oldsz, uint newsz) {
+  if (newsz >= PLIC) {
+    panic("usermapTokernel_pagetable : va >= PLIC");
+  }
+
+  for (uint va = oldsz; va < newsz; va += PGSIZE) {
+    pte_t* upte = walk(pagetable, va, 0);
+
+    if (upte == 0) {
+      panic("no upte\n");
     }
+
+    if ((*upte & PTE_V) == 0) {
+      panic("upte invalid\n");
+    }
+
+    pte_t* kpte = walk(kernel_pagetable, va, 1);
+    *kpte = *upte & (~(PTE_U | PTE_W | PTE_X));
+    
+  }
+
+  for (uint va = newsz; va < oldsz; va += PGSIZE) {
+    pte_t* kpte = walk(kernel_pagetable, va, 1);
+    *kpte &= ~PTE_V;
   }
 }

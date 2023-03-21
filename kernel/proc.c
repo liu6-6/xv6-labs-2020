@@ -18,6 +18,7 @@ struct spinlock pid_lock;
 extern void forkret(void);
 static void wakeup1(struct proc *chan);
 static void freeproc(struct proc *p);
+void freeusermap(pagetable_t kernel_pagetable); 
 
 extern char trampoline[]; // trampoline.S
 
@@ -145,9 +146,13 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
-  if (p->kernel_pagetable) 
+
+  if (p->kernel_pagetable) {
+    freeusermap(p->kernel_pagetable);
     kfree((void *) p->kernel_pagetable);
+  }
   p->kernel_pagetable = 0;
+
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -159,6 +164,26 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+}
+
+//free usermap pagetable page in the process's kernel page table
+void freeusermap(pagetable_t kernel_pagetable) {
+  pte_t* pte2 = &kernel_pagetable[0];
+  pagetable_t level1 = (pagetable_t) PTE2PA(*pte2);
+  for (int i = 0; i < 512; i++) {
+    pte_t* pte1 = &level1[i];
+    if (*pte1 & PTE_V) {
+      // should check the validness of pte
+      pagetable_t level0 = (pagetable_t) PTE2PA(*pte1);
+      // printf("level0 = %d\n", level0);
+      kfree((void *) level0);
+    }
+    
+  }
+  if (*pte2 & PTE_V) {
+    // printf("level1 = %d\n", level1);
+    kfree((void *) level1);  
+  }
 }
 
 // Create a user page table for a given process,
@@ -227,8 +252,27 @@ userinit(void)
   
   // allocate one user page and copy init's instructions
   // and data into it.
+  // printf("first process id = %d\n", p->pid);
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
+
+  // p->kernel_pagetable = kalloc();
+  // memset(p->kernel_pagetable, 0, PGSIZE);
+  // for (uint va = 0; va < PGROUNDUP(p->sz) && va < PLIC; va += PGSIZE) {
+  //   // pte_t* pte = walk(p->kernel_pagetable, va, 0); // dont need
+  //   // if (pte == 0 || *pte == 0) { // this if lead to mistake
+  //   // because 
+  //     pte_t* user_pte = walk(p->pagetable, va, 0);
+  //     if (*user_pte && (*user_pte & PTE_V)) {
+  //       pte_t* pte = walk(p->kernel_pagetable, va, 1);
+  //       *pte = *user_pte & ~(PTE_U | PTE_W | PTE_X);
+  //       // *pte = *user_pte;
+  //     // }
+  //   }
+  // }
+  usermapTokernel_pagetable(p->pagetable, p->kernel_pagetable, 0, PGSIZE);
+
+
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -250,14 +294,53 @@ growproc(int n)
   uint sz;
   struct proc *p = myproc();
 
+  // if (p->pid == 3) printf("run 273\n");
+
   sz = p->sz;
+  // printf("p->sz = %d, n = %d\n", p->sz, n);
   if(n > 0){
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+
+    for (uint va = p->sz; va < sz && va < PLIC; va += PGSIZE) {
+    // pte_t* pte = walk(p->kernel_pagetable, va, 0); // dont need
+    // if (pte == 0 || *pte == 0) { // this if lead to mistake
+    // because 
+      // printf("va = %d\n", va);
+      pte_t* user_pte = walk(p->pagetable, va, 0);
+      if (*user_pte && (*user_pte & PTE_V)) {
+        pte_t* pte = walk(p->kernel_pagetable, va, 1);
+        *pte = *user_pte & ~(PTE_U | PTE_W | PTE_X);
+        // *pte = *user_pte;
+      // }
+    }
+    }
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+
+    // make ptes of sz to p->sz invalid 
+    // for (uint va = p->sz - 1; va > sz - 1; va -= PGSIZE) {//will become forerver loop 
+    // // because va = 4095 - 4096 will become the biggest number of uint
+    for (uint va = sz; va < p->sz && va < PLIC; va += PGSIZE) {
+      pte_t* pte = walk(p->kernel_pagetable, va, 0);
+      if (pte == 0) {
+        printf("p->sz = %p\n", p->sz);
+        printf("p->sz = %d\n", p->sz);
+        printf("va = %p\n", va);
+        printf("n = %d\n", n);
+        printf("sz = %d\n", sz);
+        panic("pte == 0\n");
+
+      }
+      if (*pte & PTE_V) {
+        *pte &= ~PTE_V;
+
+      }
+      // *pte &= ~PTE_V;
+    }
   }
+  // usermapTokernel_pagetable(p->pagetable, p->kernel_pagetable, p->sz, sz);
   p->sz = sz;
   return 0;
 }
@@ -282,7 +365,28 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+
+  // 2023.03.15 how to add user mapping to process's kernel pagetable?
+  // if (uvmcopy(p->kernel_pagetable, np->kernel_pagetable, p->sz) < 0) {
+  //   freeproc(np);
+  //   release(&np->lock);
+  //   return -1;
+  // }
+
   np->sz = p->sz;
+
+  // usermapTokernel_pagetable(np->pagetable, np->kernel_pagetable, 0, np->sz);
+  for (uint va = 0; va < PGROUNDUP(np->sz) && va < PLIC; va += PGSIZE) {
+    // pte_t* pte = walk(np->kernel_pagetable, va, 0);
+    // if (pte == 0 || *pte == 0) {
+      pte_t* user_pte = walk(np->pagetable, va, 0);
+      if (*user_pte && (*user_pte & PTE_V)) {
+        pte_t* pte = walk(np->kernel_pagetable, va, 1);
+        *pte = *user_pte & ~(PTE_U | PTE_W | PTE_X);
+        // *pte = *user_pte;
+      }
+    // }
+  }
 
   np->parent = p;
 
@@ -476,28 +580,43 @@ scheduler(void)
     int found = 0;
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
+      // //write satp
+      //   w_satp(MAKE_SATP(p->kernel_pagetable));
+      //   sfence_vma();
       if(p->state == RUNNABLE) {
+        // printf("pid = %d\n", p->pid);
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        
+        //write satp
+        w_satp(MAKE_SATP(p->kernel_pagetable));
+        sfence_vma();
+        
+        // if (p->pid == 1) printf("\nkernel_pagetable\n");
+        // if (p->pid == 1) vmprint1(p->kernel_pagetable);
+        // if (p->pid == 1) printf("\npagetable\n");
+        // if (p->pid == 1) vmprint1(p->pagetable);
         swtch(&c->context, &p->context);
+        
+        kvminithart();
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
 
-        //write satp
-        w_satp(MAKE_SATP(p->kernel_pagetable));
-        sfence_vma();
+        // //write satp
+        // w_satp(MAKE_SATP(p->kernel_pagetable));
+        // sfence_vma();
 
         found = 1;
       }
       release(&p->lock);
     }
 
-    kvminithart();
+    // kvminithart();
 #if !defined (LAB_FS)
     if(found == 0) {
       intr_on();

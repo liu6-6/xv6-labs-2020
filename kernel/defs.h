@@ -179,7 +179,16 @@ int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 void            vmprint(pagetable_t);
+void            vmprint1(pagetable_t pagetable);
+void            Kvmprint(void);
+void            kvmmap_kernel_pagetable(pagetable_t pagetable ,uint64 va, uint64 pa, uint64 sz, int perm);
+void usermapTokernel_pagetable(pagetable_t pagetable, pagetable_t kernel_pagetable, uint oldsz, uint newsz);
 pagetable_t     copy_kernel_pagetable(void);
+pte_t *         walk(pagetable_t, uint64, int);
+
+// vmcopyin.c
+int             copyin_new(pagetable_t, char*, uint64, uint64);
+int             copyinstr_new(pagetable_t, char *, uint64, uint64);
 
 // plic.c
 void            plicinit(void);

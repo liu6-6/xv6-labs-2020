@@ -116,7 +116,24 @@ exec(char *path, char **argv)
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
 
+  // usermapTokernel_pagetable(p->pagetable, p->kernel_pagetable, oldsz, sz);
+  // usermapTokernel_pagetable(p->pagetable, p->kernel_pagetable, 0, sz);
+  for (uint va = 0; va < PGROUNDUP(p->sz) && va < PLIC; va += PGSIZE) {
+    // pte_t* pte = walk(p->kernel_pagetable, va, 0); // dont need
+    // if (pte == 0 || *pte == 0) { // this if lead to mistake
+    // because 
+      pte_t* user_pte = walk(p->pagetable, va, 0);
+      if (*user_pte && (*user_pte & PTE_V)) {
+        pte_t* pte = walk(p->kernel_pagetable, va, 1);
+        *pte = *user_pte & ~(PTE_U | PTE_W | PTE_X);
+        // *pte = *user_pte;
+      // }
+    }
+  }
+
   if (p->pid == 1) vmprint(p->pagetable);
+  // if (p->pid == 1) vmprint1(p->kernel_pagetable);
+  // if (p->pid == 1) Kvmprint();
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:

@@ -1,0 +1,16 @@
+set history filename gdb.history
+set history save on
+set history size 1000
+set history filename gdb.history
+shell cat gdb.history
+set history filename gdb.history
+set history save on
+set history size 1000
+set history filename gdb.history
+cat gdb.history
+shell cat gdb.history
+set history filename ./gdb.history
+shell cat ./gdb.history
+cwd
+p cwd
+q
