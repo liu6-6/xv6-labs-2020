@@ -43,3 +43,34 @@ You will need a RISC-V "newlib" tool chain from
 https://github.com/riscv/riscv-gnu-toolchain, and qemu compiled for
 riscv64-softmmu. Once they are installed, and in your shell
 search path, you can run "make qemu".
+
+git clone https://github.com/riscv/riscv-gnu-toolchain
+cd riscv-gnu-toolchain
+git clone --recursive https://github.com/riscv/riscv-qemu.git
+git clone --recursive https://github.com/riscv/riscv-newlib.git
+git clone --recursive https://github.com/riscv/riscv-binutils-gdb.git
+git clone --recursive https://github.com/riscv/riscv-dejagnu.git
+git clone --recursive https://github.com/riscv/riscv-glibc.git
+git clone --recursive https://github.com/riscv/riscv-gcc.git
+
+下载依赖
+
+sudo apt-get install autoconf automake autotools-dev curl libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev -y
+编译
+
+cd riscv-gnu-toolchain
+./configure --prefix=/usr/local
+sudo make
+运行gdb
+
+make qemu
+在另一个窗口下运行
+
+riscv64-unknown-elf-gdb kernel/kernel
+gdb打开以后输入
+
+(gdb) target remote localhost:26000
+输出类似以下内容则成功，可以开始调试了
+
+Remote debugging using localhost:26000
+0x0000000000001000 in ?? ()

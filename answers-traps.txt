@@ -1,0 +1,8 @@
+1 a0 ~ a5
+2 26
+3 630
+4 38
+5 i = 0x726c6400
+  dont need to change 57616
+6 1,
+    because the int after where "3" stored is 1.
