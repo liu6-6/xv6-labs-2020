@@ -12,6 +12,8 @@ struct proc proc[NPROC];
 
 struct proc *initproc;
 
+struct trapframe handler_saved_trapframe;
+
 int nextpid = 1;
 struct spinlock pid_lock;
 
@@ -127,6 +129,9 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  p->alarm_ticks = 0;
+  p->handler = -1;
+  p->passed_ticks = 0;
   return p;
 }
 

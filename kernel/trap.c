@@ -77,8 +77,40 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
+  // if(which_dev == 2)
+  //   yield();
+
   if(which_dev == 2)
-    yield();
+  {
+    if (p->alarm_ticks != 0) p->passed_ticks++;
+    if (p->alarm_ticks != 0 && p->passed_ticks == p->alarm_ticks) {
+      // intr_off();
+      // p->passed_ticks = 0;
+      // uint64 sp = p->trapframe->kernel_sp - 8;
+      uint64* p_tf = (uint64*)&handler_saved_trapframe;
+      // printf("sizeof(struct trapframe) = %d\n", sizeof(struct trapframe));
+      // memmove(p_tf, p->trapframe, sizeof(struct trapframe));
+      for (int i = 0; i <= 280; i += 8) {
+        // printf("%p\n", *((uint64*)(p->trapframe) + i / 8));
+        // *(uint64 *)sp = *((uint64*)(p->trapframe) + i / 8);
+        // sp -= 8;
+        // printf("trap:sp = %p\n", sp);
+        // printf("i = %d\n", i);
+        // printf("p_tf + i / 8 = %p\n", p_tf + i / 8);
+        *(p_tf + i / 8) = *((uint64*)(p->trapframe) + i / 8);
+        // printf("*(p_tf + i / 8) = %p\n", *(p_tf + i / 8));
+        // printf("*((uint64*)(p->trapframe) + i / 8) = %p\n", *((uint64*)(p->trapframe) + i / 8));
+        // printf("\n");
+      }
+      uint64 fn = p->handler;
+      p->trapframe->epc = fn;
+      // w_sepc(fn);
+      // ((void (*) (void))fn)();
+      // ((void (*)(uint64,uint64))fn)(TRAPFRAME, satp);
+    }
+     yield(); 
+  }
+    
 
   usertrapret();
 }

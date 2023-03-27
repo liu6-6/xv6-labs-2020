@@ -327,6 +327,14 @@ r_fp()
   return x;
 }
 
+static inline uint64
+r_a1()
+{
+  uint64 x;
+  asm volatile("mv %0, a1" : "=r" (x) );
+  return x;
+}
+
 
 #define PGSIZE 4096 // bytes per page
 #define PGSHIFT 12  // bits of offset within a page
