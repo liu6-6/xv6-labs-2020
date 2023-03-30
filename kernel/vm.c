@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -97,6 +99,13 @@ walkaddr(pagetable_t pagetable, uint64 va)
   pte_t *pte;
   uint64 pa;
 
+  struct proc* p = myproc();
+  if (va < p->sz) {
+    pte = walk(pagetable, va, 0);
+    if (pte == 0 || (*pte & PTE_V) == 0) 
+      lazyAllocationHandler(p, va);
+  }
+  
   if(va >= MAXVA)
     return 0;
 
@@ -180,17 +189,35 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     panic("uvmunmap: not aligned");
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
-    if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
-    if(PTE_FLAGS(*pte) == PTE_V)
-      panic("uvmunmap: not a leaf");
-    if(do_free){
-      uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+    // if((pte = walk(pagetable, a, 0)) == 0) //if lazy allocation before?
+    //   panic("uvmunmap: walk");
+    // if((*pte & PTE_V) == 0)
+    //   panic("uvmunmap: not mapped");
+    // if(PTE_FLAGS(*pte) == PTE_V)
+    //   panic("uvmunmap: not a leaf");
+    // if(do_free){
+    //   uint64 pa = PTE2PA(*pte);
+    //   kfree((void*)pa);
+    // }
+    // *pte = 0;
+
+    // if lazy allocation happened before
+    if ((pte = walk(pagetable, a, 0)) == 0) {
+      // printf("dealloc %p of lazy allocation\n", a);
     }
-    *pte = 0;
+    else if ((*pte & PTE_V) == 0) {// didnt alloc
+      //do nothing;
+    }
+    else {
+      if(PTE_FLAGS(*pte) == PTE_V)
+        panic("uvmunmap: not a leaf");
+      if(do_free){
+        uint64 pa = PTE2PA(*pte);
+        kfree((void*)pa);
+      }
+      *pte = 0;
+    }
+
   }
 }
 
@@ -314,10 +341,18 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
-    if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+    // if((pte = walk(old, i, 0)) == 0)
+    //   panic("uvmcopy: pte should exist");
+    // if((*pte & PTE_V) == 0)
+    //   panic("uvmcopy: page not present");
+    if ((pte = walk(old, i , 0)) == 0) {
+      // printf("uvmcopy: copy invalid page(pte should exist, lazy)\n");
+      continue;
+    }
+    if ((*pte & PTE_V) == 0) {
+      // printf("uvmcopy: copy invalid page(lazy)\n");
+      continue;
+    }
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -355,6 +390,25 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
+  
+  // struct proc* p = myproc(); //printf("387\n");
+  // for (uint64 start = dstva; start < dstva + len; start += PGSIZE) {
+  //   if (start <= p->sz) {
+  //     pte_t* pte = walk(pagetable, start, 0);
+  //     if (pte == 0 || (*pte & PTE_V) == 0) {
+  //       // printf("allocate for virtual address %p\n", start);
+  //       lazyAllocationHandler(p, start);
+  //     }
+  //   }
+  // }
+
+  // dont work, because just alloc one page. the following pages arent allocated.
+  // if (dstva <= p->sz) {
+  //   pte_t* pte = walk(pagetable, dstva, 0);
+  //   if (pte == 0 || (*pte & PTE_V) == 0) {
+  //     lazyAllocationHandler(p, dstva);
+  //   }
+  // }
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
@@ -439,4 +493,40 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+void lazyAllocationHandler(struct proc* p, uint64 addr) {
+  uint64 page_addr = PGROUNDDOWN(addr);
+  // pte_t* pte = walk(p->pagetable, addr, 0);
+
+  if (addr >= p->sz) {
+    p->killed = 1;
+  }
+  else{
+    pte_t* pte = walk(p->pagetable, addr, 0);
+
+    if (pte && ((*pte & PTE_V) == 1) && ((*pte & PTE_U) == 0) ) {
+      //guard page PTE_V, ~PTE_U, in user space
+      //access guard page, just kill
+      p->killed = 1;
+    }
+    else {
+      char* mem = kalloc();
+      if (mem == 0) {
+        // if kalloc cant alloc memory(out of memory), kill the process
+        p->killed = 1;
+        // panic("kernal alloc mem failed\n");
+      }
+      else {
+        memset(mem, 0, PGSIZE);
+        
+        if (mappages(p->pagetable, page_addr, PGSIZE, (uint64)mem, PTE_R | PTE_W | PTE_X | PTE_U) != 0) {
+          //mapping failed
+          kfree(mem);
+          panic("mapping failed\n");
+        }
+      }
+    }
+  } 
+
 }

@@ -75,6 +75,14 @@ sys_read(void)
 
   if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argaddr(1, &p) < 0)
     return -1;
+  
+  // //for lazy allocation
+  // struct proc* pptr = myproc();
+  // pte_t* pte = walk(pptr->pagetable, p, 0);
+
+  // if (pte == 0 || (*pte & PTE_V) == 0)
+  //   lazyAllocationHandler(pptr, p);
+
   return fileread(f, p, n);
 }
 
@@ -88,6 +96,21 @@ sys_write(void)
   if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argaddr(1, &p) < 0)
     return -1;
 
+  //for lazy allocation
+  // struct proc* pptr = myproc(); // maybe not only one page
+  // for (uint64 start = p; start < p + n; start += PGSIZE) {
+  //   pte_t* pte = walk(pptr->pagetable, start, 0);
+  //   if (pte == 0 || (*pte & PTE_V) == 0) {
+  //     // printf("allocate for virtual address %p\n", start);
+  //     lazyAllocationHandler(pptr, start);
+  //   }
+  // }
+
+  // pte_t* pte = walk(pptr->pagetable, p, 0);
+  
+  // if (pte == 0 || (*pte & PTE_V) == 0)
+  //   lazyAllocationHandler(pptr, p);
+  
   return filewrite(f, p, n);
 }
 

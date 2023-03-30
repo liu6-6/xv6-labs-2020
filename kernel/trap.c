@@ -68,9 +68,55 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
-    p->killed = 1;
+    if (r_scause() == 13 || r_scause() == 15) {// page fault
+      // printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+      // printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+
+      //works , altered by the function below this
+
+      // uint64 addr = r_stval(); // virtual addr where page fault happened
+      // uint64 page_addr = PGROUNDDOWN(addr);
+      // struct proc* p = myproc();
+      // pte_t* pte = walk(p->pagetable, addr, 0);
+
+      // if (addr < p->sz && pte && ((*pte & PTE_V) == 1) && ((*pte & PTE_U) == 0) ) {
+      //   //guard page PTE_V, ~PTE_U, in user space
+      //   //access guard page, just kill
+      //   p->killed = 1;
+      // }
+      // else if (addr > p->sz) {
+      //   p->killed = 1;
+      // }
+      // else {
+      //   char* mem = kalloc();
+      //   if (mem == 0) {
+      //     // if kalloc cant alloc memory(out of memory), kill the process
+      //     p->killed = 1;
+      //     // panic("kernal alloc mem failed\n");
+      //   }
+      //   else {
+      //     memset(mem, 0, PGSIZE);
+          
+      //     if (mappages(p->pagetable, page_addr, PGSIZE, (uint64)mem, PTE_R | PTE_W | PTE_X | PTE_U) != 0) {
+      //       //mapping failed
+      //       kfree(mem);
+      //       panic("mapping failed\n");
+      //     }
+      //   }
+        
+      // }
+
+      uint64 addr = r_stval(); // virtual addr where page fault happened
+      struct proc* p = myproc();
+      
+      lazyAllocationHandler(p, addr);
+    }
+    else {
+      printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+      p->killed = 1;
+    }
+    
   }
 
   if(p->killed)
