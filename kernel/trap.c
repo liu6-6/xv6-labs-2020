@@ -68,9 +68,21 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
-    p->killed = 1;
+    if (r_scause() == 12 ||r_scause() == 13 || r_scause() == 15) {
+      // printf("page fault\n");
+      // printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+      // printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+
+      uint64 addr = r_stval();
+      struct proc* p = myproc();
+      cowHandler(p, addr);
+    }
+    else {
+      printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+      p->killed = 1;
+    }
+
   }
 
   if(p->killed)
@@ -218,3 +230,50 @@ devintr()
   }
 }
 
+void cowHandler(struct proc* p, uint64 addr) {
+  uint64 page_addr = PGROUNDDOWN(addr);
+  pte_t* pte = walk(p->pagetable, page_addr, 0);
+   uint64 origin_pa = PTE2PA(*pte); 
+
+
+  if (pte == 0) {
+    panic("cowHandler : no pte");
+  }
+  if ((*pte & PTE_V) == 0) {
+    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+    printf("pa = %p, refcount = %d, flags = %p\n", origin_pa, physicalPageRefCount[origin_pa / PGSIZE], PTE_FLAGS(*pte));
+    panic("cowHandler: not valid pte");
+  }
+
+  if (physicalPageRefCount[origin_pa / PGSIZE] == 1 && (*pte & PTE_COW) != 0) {
+    *pte &= ~PTE_COW;
+    *pte |= PTE_W;
+  }
+  else if (physicalPageRefCount[origin_pa / PGSIZE] == 1 && (*pte & PTE_COW) == 0) {
+    p->killed = 1;
+    return;
+  }
+  else if (physicalPageRefCount[origin_pa / PGSIZE] > 1 && (*pte & PTE_COW) != 0) {
+    uint64 mem = (uint64)kalloc();
+    if (mem == 0) {// out of memory, kill the process
+      p->killed = 1;
+      // panic("cowHandler: kalloc failed");
+    }
+    uint64 flags = PTE_FLAGS(*pte);
+    flags &= ~PTE_COW;
+    if (mappages(p->pagetable, page_addr, PGSIZE, mem, flags | PTE_W) != 0) {
+      panic("cowHandler: map failed");
+    }
+
+    memmove((void*)mem, (const void*)origin_pa, PGSIZE);
+
+    //old page
+    physicalPageRefCount[origin_pa / PGSIZE]--;
+  }
+  else {
+    p->killed = 1;
+    printf("pa = %p, refcount = %d, *pte & PTE_COW = %p\n", origin_pa, physicalPageRefCount[origin_pa / PGSIZE], *pte & PTE_COW);
+    panic("cowHandler: otherwise");
+  }
+}

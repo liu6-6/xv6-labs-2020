@@ -8,6 +8,7 @@
 #include "spinlock.h"
 #include "riscv.h"
 #include "defs.h"
+#include "proc.h"
 
 void freerange(void *pa_start, void *pa_end);
 
@@ -48,6 +49,12 @@ kfree(void *pa)
 {
   struct run *r;
 
+  if (physicalPageRefCount[(uint64)pa / PGSIZE] > 1) {
+    // printf("kfree: pa = %p\n", pa);
+    physicalPageRefCount[(uint64)pa / PGSIZE]--;
+    return;
+  }
+
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
@@ -78,5 +85,11 @@ kalloc(void)
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
+
+  //set the reference count as 1
+  if (r) {
+    physicalPageRefCount[(uint64)r / PGSIZE] = 1;
+  }
+
   return (void*)r;
 }
