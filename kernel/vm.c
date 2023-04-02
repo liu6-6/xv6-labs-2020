@@ -17,12 +17,20 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
+struct {
+  struct spinlock lock;
+  struct run *freelist;
+} refc;
+
+// struct spinlock vmRefcLk;
+
 /*
  * create a direct-map page table for the kernel.
  */
 void
 kvminit()
-{
+{ 
+  initlock(&refc.lock, "refc");
   kernel_pagetable = (pagetable_t) kalloc();
   memset(kernel_pagetable, 0, PGSIZE);
 
@@ -99,9 +107,18 @@ walkaddr(pagetable_t pagetable, uint64 va)
   pte_t *pte;
   uint64 pa;
 
-  struct proc* p = myproc();
-  cowHandler(p, va);
   
+  // struct proc* p = myproc();
+  // if ((uint64)pagetable == 0x87f6e000) {
+  //   printf("p->pagetable = %p\n", p->pagetable);
+  //   printf("pagetable = %p\n", pagetable);
+  //   printf("va = %p\n", va);
+  // }
+  // cowHandler(p, va);
+  //cant use cowhandler here, because p->pagetable may != pagetable
+  struct proc* p = myproc();
+  cowCopyoutHandler(p, pagetable, va);
+
   if(va >= MAXVA)
     return 0;
 
@@ -166,6 +183,15 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     }
       // panic("remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
+
+    // struct proc* p = myproc();
+    // if ((uint64)pagetable == 0x87f6e000) {
+    //   printf("mappages: pagetable = %p\n", pagetable);
+    //   printf("mappages: va = %p\n", a);
+    //   printf("mappages: pa = %p\n", pa);
+    //   printf("mappages: *pte = %p\n", *pte);
+    // }
+    
     if(a == last)
       break;
     a += PGSIZE;
@@ -245,6 +271,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   for(a = oldsz; a < newsz; a += PGSIZE){
     mem = kalloc();
     if(mem == 0){
+      // printf("uvmaalloc failed\n");
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
@@ -337,7 +364,8 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     // *pte &= PTE_COW; should be |=, otherwise other bits are 0
     *pte |= PTE_COW;
     *sonpte = *pte;
-    physicalPageRefCount[pa / PGSIZE]++;
+    // physicalPageRefCount[pa / PGSIZE]++;
+    refcountIncrease(pa);
 
     // memmove(mem, (char*)pa, PGSIZE);
     // if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
@@ -396,6 +424,8 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+    struct proc* p = myproc();
+    cowCopyoutHandler(p, pagetable, va0);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
@@ -477,4 +507,52 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+void cowCopyoutHandler(struct proc* p, pagetable_t pagetable, uint64 va) {
+  if (va >= MAXVA) {
+    //do nothing walkadrr will handle
+    return;
+  }
+  va = PGROUNDDOWN(va);
+  acquire(&refc.lock);
+  pte_t* pte = walk(pagetable, va, 0);
+  if (pte && (*pte & PTE_COW)) {
+    uint64 origin_pa = PTE2PA(*pte);
+    // acquire(&refc.lock);
+    if (physicalPageRefCount[origin_pa / PGSIZE] == 1) {
+      // release(&refc.lock);
+      *pte &= ~PTE_COW;
+      *pte |= PTE_W;
+    }
+    else if (physicalPageRefCount[origin_pa / PGSIZE] > 1) {
+      // release(&refc.lock);
+      uint64 mem = (uint64)kalloc();
+      if (mem == 0) {// out of memory, kill the process
+        p->killed = 1;
+        // printf("cowCopyoutHandler: kalloc failed\n");
+      }
+      else {
+        uint64 flags = PTE_FLAGS(*pte);
+        flags &= ~PTE_COW;
+        if (mappages(pagetable, va, PGSIZE, mem, flags | PTE_W) != 0) {
+          panic("cowHandler: map failed");
+        }
+
+        memmove((void*)mem, (const void*)origin_pa, PGSIZE);
+
+        //old page
+        // physicalPageRefCount[origin_pa / PGSIZE]--;
+        refcountDecrease(origin_pa);
+      }
+    }
+  }
+  else{
+    // if (physicalPageRefCount[origin_pa / PGSIZE] == 0) {
+    //   p->killed = 1;
+    //   panic("cowCopyoutHandler: fre")
+    // }
+    // otherwise shuold run without cowCopyoutHandler()
+  }
+  release(&refc.lock);
 }

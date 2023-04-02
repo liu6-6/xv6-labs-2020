@@ -117,7 +117,7 @@ printf(char *fmt, ...)
 void
 panic(char *s)
 { 
-  backtrace();
+  // backtrace();//printf("120\n");
   pr.locking = 0;
   printf("panic: ");
   printf(s);
@@ -136,9 +136,11 @@ printfinit(void)
 
 void backtrace(void) {
   uint64 fp = r_fp();
+  // printf("fp = %p\n", fp);
   // printf("kstack(0) = %p\n", KSTACK(0));
   // printf("kstack(1) = %p\n", KSTACK(1));
-  while (fp < KSTACK(0) && fp >= PHYSTOP) {
+  uint64 low = PGROUNDDOWN(fp), high = PGROUNDUP(fp);
+  while (fp >= low && fp < high) {
     // printf("%p\n", fp);
     if ((uint64)*(uint64 *)(fp - 8) >= KERNBASE)
       printf("%p\n", *(uint64 *)(fp - 8));

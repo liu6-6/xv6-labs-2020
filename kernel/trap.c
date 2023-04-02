@@ -16,10 +16,18 @@ void kernelvec();
 
 extern int devintr();
 
+struct {
+  struct spinlock lock;
+  struct run *freelist;
+} refc1;
+
+// struct spinlock TrapRefcLk;
+
 void
 trapinit(void)
 {
   initlock(&tickslock, "time");
+  initlock(&refc1.lock, "refc1");
 }
 
 // set up to take exceptions and traps while in the kernel.
@@ -231,49 +239,95 @@ devintr()
 }
 
 void cowHandler(struct proc* p, uint64 addr) {
+  
   uint64 page_addr = PGROUNDDOWN(addr);
   pte_t* pte = walk(p->pagetable, page_addr, 0);
    uint64 origin_pa = PTE2PA(*pte); 
 
-
+  if (addr >= p->sz) {// access memory >= p->sz, just kill the process
+    p->killed = 1;
+    return;
+  }
   if (pte == 0) {
     panic("cowHandler : no pte");
   }
   if ((*pte & PTE_V) == 0) {
+    printf("*pte = %p\n", *pte);
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     printf("pa = %p, refcount = %d, flags = %p\n", origin_pa, physicalPageRefCount[origin_pa / PGSIZE], PTE_FLAGS(*pte));
+    if ((uint64)p == 0x80232308) {
+        pte_t* ptemem = walk(p->pagetable, page_addr, 0);
+        printf("*ptemem = %p, flags = %p\n", *ptemem, PTE_FLAGS(*ptemem));
+        // printf("mem = %p\n", mem);
+        printf("origin_pa = %p\n", origin_pa);
+        printf("va = %p\n", page_addr);
+        printf("p->sz = %p\n", p->sz);
+      }
     panic("cowHandler: not valid pte");
   }
-
+  
+  acquire(&refc1.lock);
   if (physicalPageRefCount[origin_pa / PGSIZE] == 1 && (*pte & PTE_COW) != 0) {
+    // release(&refc1.lock);
     *pte &= ~PTE_COW;
     *pte |= PTE_W;
   }
   else if (physicalPageRefCount[origin_pa / PGSIZE] == 1 && (*pte & PTE_COW) == 0) {
+    release(&refc1.lock);
     p->killed = 1;
     return;
   }
   else if (physicalPageRefCount[origin_pa / PGSIZE] > 1 && (*pte & PTE_COW) != 0) {
+    // release(&refc1.lock);
     uint64 mem = (uint64)kalloc();
     if (mem == 0) {// out of memory, kill the process
       p->killed = 1;
       // panic("cowHandler: kalloc failed");
     }
-    uint64 flags = PTE_FLAGS(*pte);
-    flags &= ~PTE_COW;
-    if (mappages(p->pagetable, page_addr, PGSIZE, mem, flags | PTE_W) != 0) {
-      panic("cowHandler: map failed");
+    else {
+      uint64 flags = PTE_FLAGS(*pte);
+      flags &= ~PTE_COW;
+      if (mappages(p->pagetable, page_addr, PGSIZE, mem, flags | PTE_W) != 0) {
+        panic("cowHandler: map failed");
+      }
+
+      // if ((uint64)p == 0x80232308) {
+      //   pte_t* ptemem = walk(p->pagetable, page_addr, 0);
+      //   printf("*ptemem = %p, flags = %p\n", *ptemem, PTE_FLAGS(*ptemem));
+      //   printf("mem = %p\n", mem);
+      //   printf("origin_pa = %p\n", origin_pa);
+      //   printf("va = %p\n", page_addr);
+      // }
+      memmove((void*)mem, (const void*)origin_pa, PGSIZE);
+
+      //old page
+      // physicalPageRefCount[origin_pa / PGSIZE]--;  
+      refcountDecrease(origin_pa);
     }
+    // uint64 flags = PTE_FLAGS(*pte);
+    // flags &= ~PTE_COW;
+    // if (mappages(p->pagetable, page_addr, PGSIZE, mem, flags | PTE_W) != 0) {
+    //   panic("cowHandler: map failed");
+    // }
 
-    memmove((void*)mem, (const void*)origin_pa, PGSIZE);
+    // if ((uint64)p == 0x80232308) {
+    //   pte_t* ptemem = walk(p->pagetable, page_addr, 0);
+    //   printf("*ptemem = %p, flags = %p\n", *ptemem, PTE_FLAGS(*ptemem));
+    //   printf("mem = %p\n", mem);
+    //   printf("origin_pa = %p\n", origin_pa);
+    //   printf("va = %p\n", page_addr);
+    // }
+    // memmove((void*)mem, (const void*)origin_pa, PGSIZE);
 
-    //old page
-    physicalPageRefCount[origin_pa / PGSIZE]--;
+    // //old page
+    // physicalPageRefCount[origin_pa / PGSIZE]--;
   }
   else {
+    release(&refc1.lock);
     p->killed = 1;
     printf("pa = %p, refcount = %d, *pte & PTE_COW = %p\n", origin_pa, physicalPageRefCount[origin_pa / PGSIZE], *pte & PTE_COW);
     panic("cowHandler: otherwise");
   }
+  release(&refc1.lock);
 }

@@ -47,7 +47,11 @@ void
 release(struct spinlock *lk)
 {
   if(!holding(lk))
+  { 
+    printf("lk->name = %s\n", lk->name);
     panic("release");
+  }
+    
 
   lk->cpu = 0;
 

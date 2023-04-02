@@ -1,0 +1,53 @@
+Script started on 2023-04-01 01:33:46-07:00 [TERM="xterm-256color" TTY="/dev/pts/6" COLUMNS="83" LINES="17"]
+lhf@ubuntu:~/work/xv6-labs-2020$ riscv64-unknown-elf-gdb
+GNU gdb (GDB) 12.1
+Copyright (C) 2022 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+Type "show copying" and "show warranty" for details.
+This GDB was configured as "--host=x86_64-pc-linux-gnu --target=riscv64-unknown-elf".
+Type "show configuration" for configuration details.
+For bug reporting instructions, please see:
+<https://www.gnu.org/software/gdb/bugs/>.
+Find the GDB manual and other documentation resources online at:
+    <http://www.gnu.org/software/gdb/documentation/>.
+
+For help, type "help".
+Type "apropos word" to search for commands related to "word".
+--Type <RET> for more, q to quit, c to continue without paging--c
+The target architecture is set to "riscv:rv64".
+warning: No executable has been specified and target does not support
+determining executable automatically.  Try using the "file" command.
+0x0000000000001000 in ?? ()
+(gdb) b panic
+Breakpoint 1 at 0x80000548: file kernel/printf.c, line 119.
+(gdb) c
+Continuing.
+
+Breakpoint 1, panic (s=s@entry=0x80008408 "cowHandler: not valid pte") at kernel/printf.c:119
+119	{
+(gdb) bt
+#0  panic (s=s@entry=0x80008408 "cowHandler: not valid pte")
+    at kernel/printf.c:119
+#1  0x0000000080002a8e in cowHandler (p=0x80231d68 <proc>, addr=addr@entry=8192)
+    at kernel/trap.c:246
+#2  0x0000000080001172 in walkaddr (pagetable=pagetable@entry=0x87f6e000,
+    va=va@entry=8192) at kernel/vm.c:103
+#3  0x00000000800017e8 in copyout (pagetable=pagetable@entry=0x87f6e000,
+    dstva=dstva@entry=12272, src=src@entry=0x87f6f000 "/init", len=6)
+    at kernel/vm.c:399
+#4  0x0000000080004fd0 in exec (path=path@entry=0x3fffffdf00 "/init",
+    argv=argv@entry=0x3fffffde00) at kernel/exec.c:86
+#5  0x0000000080005c54 in sys_exec () at kernel/sysfile.c:444
+#6  0x0000000080002dde in syscall () at kernel/syscall.c:140
+#7  0x0000000080002b5e in usertrap () at kernel/trap.c:67
+#8  0x0505050505050505 in ?? ()
+(gdb) q
+Detaching from pid process 1
+Ending remote debugging.
+[Inferior 1 (process 1) detached]
+lhf@ubuntu:~/work/xv6-labs-2020$ exit
+exit
+
+Script done on 2023-04-01 01:34:07-07:00 [COMMAND_EXIT_CODE="0"]
