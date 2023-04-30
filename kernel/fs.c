@@ -78,7 +78,7 @@ balloc(uint dev)
         bp->data[bi/8] |= m;  // Mark block in use.
         log_write(bp);
         brelse(bp);
-        bzero(dev, b + bi); printf("zero");
+        bzero(dev, b + bi); //printf("zero");
         return b + bi;
       }
     }
@@ -408,7 +408,7 @@ bmap(struct inode *ip, uint bn)
     if((addr = a[bn]) == 0){
       a[bn] = addr = balloc(ip->dev);
       // printf("addr = %d\n", addr);
-      // log_write(bp);
+      log_write(bp);
     }
     // printf("addr = %d\n", addr);
     // printf("a[bn] = %d\n", a[bn]);
@@ -424,7 +424,7 @@ bmap(struct inode *ip, uint bn)
     a = (uint*)bp->data;
     if ((addr = a[bn / NINDIRECT]) == 0) {
       a[bn / NINDIRECT] = addr = balloc(ip->dev);
-      // log_write(bp);
+      log_write(bp);
     }
     brelse(bp);
 
