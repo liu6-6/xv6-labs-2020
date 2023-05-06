@@ -78,7 +78,7 @@ bget(uint dev, uint blockno)
     if(b->refcnt == 0) {
       b->dev = dev;
       b->blockno = blockno;
-      b->valid = 0;
+      b->valid = 0; // 1 : is a cache of a disk block, 0 : is not
       b->refcnt = 1;
       release(&bcache.lock);
       acquiresleep(&b->lock);
@@ -123,8 +123,8 @@ brelse(struct buf *b)
 
   acquire(&bcache.lock);
   b->refcnt--;
-  if (b->refcnt == 0) {
-    // no one is waiting for it.
+  if (b->refcnt == 0) { // all processes have finished using this block buffer cache
+    // no one is waiting for it. put it in the first of the lru list
     b->next->prev = b->prev;
     b->prev->next = b->next;
     b->next = bcache.head.next;

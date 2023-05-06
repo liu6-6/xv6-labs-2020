@@ -75,7 +75,7 @@ install_trans(int recovering)
     struct buf *dbuf = bread(log.dev, log.lh.block[tail]); // read dst
     memmove(dbuf->data, lbuf->data, BSIZE);  // copy block to dst
     bwrite(dbuf);  // write dst to disk
-    if(recovering == 0)
+    if(recovering == 0)// why?
       bunpin(dbuf);
     brelse(lbuf);
     brelse(dbuf);
@@ -130,7 +130,7 @@ begin_op(void)
   while(1){
     if(log.committing){
       sleep(&log, &log.lock);
-    } else if(log.lh.n + (log.outstanding+1)*MAXOPBLOCKS > LOGSIZE){
+    } else if(log.lh.n + (log.outstanding+1)*MAXOPBLOCKS > LOGSIZE){  // MAXOPBLOCKS :max # of blocks any FS op writes
       // this op might exhaust log space; wait for commit.
       sleep(&log, &log.lock);
     } else {
@@ -183,7 +183,7 @@ write_log(void)
   for (tail = 0; tail < log.lh.n; tail++) {
     struct buf *to = bread(log.dev, log.start+tail+1); // log block
     struct buf *from = bread(log.dev, log.lh.block[tail]); // cache block
-    memmove(to->data, from->data, BSIZE);
+    memmove(to->data, from->data, BSIZE);// in memory
     bwrite(to);  // write the log
     brelse(from);
     brelse(to);
@@ -216,7 +216,7 @@ log_write(struct buf *b)
 {
   int i;
 
-  if (log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1)
+  if (log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1)// what is the second condition?
     panic("too big a transaction");
   if (log.outstanding < 1)
     panic("log_write outside of trans");

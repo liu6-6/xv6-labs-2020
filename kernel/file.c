@@ -17,7 +17,7 @@ struct devsw devsw[NDEV];
 struct {
   struct spinlock lock;
   struct file file[NFILE];
-} ftable;
+} ftable; // global file table
 
 void
 fileinit(void)
@@ -68,7 +68,7 @@ fileclose(struct file *f)
     release(&ftable.lock);
     return;
   }
-  ff = *f;
+  ff = *f; // why should copy a struct file
   f->ref = 0;
   f->type = FD_NONE;
   release(&ftable.lock);

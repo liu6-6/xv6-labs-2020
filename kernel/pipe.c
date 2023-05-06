@@ -61,7 +61,7 @@ pipeclose(struct pipe *pi, int writable)
   acquire(&pi->lock);
   if(writable){
     pi->writeopen = 0;
-    wakeup(&pi->nread);
+    wakeup(&pi->nread);// this achieve the block machanism of pipe?
   } else {
     pi->readopen = 0;
     wakeup(&pi->nwrite);

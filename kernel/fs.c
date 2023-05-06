@@ -94,7 +94,7 @@ bfree(int dev, uint b)
   struct buf *bp;
   int bi, m;
 
-  bp = bread(dev, BBLOCK(b, sb));
+  bp = bread(dev, BBLOCK(b, sb));// read bit map block
   bi = b % BPB;
   m = 1 << (bi % 8);
   if((bp->data[bi/8] & m) == 0)
@@ -202,8 +202,8 @@ ialloc(uint dev, short type)
   struct dinode *dip;
 
   for(inum = 1; inum < sb.ninodes; inum++){
-    bp = bread(dev, IBLOCK(inum, sb));
-    dip = (struct dinode*)bp->data + inum%IPB;
+    bp = bread(dev, IBLOCK(inum, sb)); // read the block which the inode is in
+    dip = (struct dinode*)bp->data + inum%IPB;// point to the position of the inode in the block
     if(dip->type == 0){  // a free inode
       memset(dip, 0, sizeof(*dip));
       dip->type = type;
@@ -521,14 +521,14 @@ readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
   uint tot, m;
   struct buf *bp;
 
-  if(off > ip->size || off + n < off)
+  if(off > ip->size || off + n < off)// is n the read length?
     return 0;
   if(off + n > ip->size)
     n = ip->size - off;
 
   for(tot=0; tot<n; tot+=m, off+=m, dst+=m){
     bp = bread(ip->dev, bmap(ip, off/BSIZE));
-    m = min(n - tot, BSIZE - off%BSIZE);
+    m = min(n - tot, BSIZE - off%BSIZE);// because get one block one time from disk or buffer cache
     if(either_copyout(user_dst, dst, bp->data + (off % BSIZE), m) == -1) {
       brelse(bp);
       tot = -1;
@@ -552,6 +552,8 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
   uint tot, m;
   struct buf *bp;
 
+  // off > ip->size : maybe because the content is in position 0 ~ ip->size - 1
+  //so the max next write position is ip->size
   if(off > ip->size || off + n < off)
     return -1;
   if(off + n > MAXFILE*BSIZE)
@@ -625,7 +627,7 @@ dirlink(struct inode *dp, char *name, uint inum)
 
   // Check that name is not present.
   if((ip = dirlookup(dp, name, 0)) != 0){
-    iput(ip);
+    iput(ip); // why this?
     return -1;
   }
 
@@ -639,6 +641,7 @@ dirlink(struct inode *dp, char *name, uint inum)
 
   strncpy(de.name, name, DIRSIZ);
   de.inum = inum;
+  // writei() will check if directory file is out of maxsize
   if(writei(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
     panic("dirlink");
 
