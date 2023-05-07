@@ -16,6 +16,9 @@
 #include "file.h"
 #include "fcntl.h"
 
+static struct inode*
+create(char *path, short type, short major, short minor);
+
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -165,6 +168,37 @@ bad:
   return -1;
 }
 
+uint64
+sys_symlink(void) {
+  char target[MAXPATH], path[MAXPATH];
+
+  if (argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0) 
+    return -1;
+  
+  begin_op();
+  
+  struct inode *ip = create(path, T_SYMLINK, 0, 0);
+  if (ip == 0) // create fail
+  {
+    end_op();
+    // printf("create failed\n");
+    return -1;
+  }
+
+  uint len = strlen(target) + 1;
+  // ilock(ip); // create hold ip's lock, so this must remove
+  if (writei(ip, 0, (uint64)target, 0, len) != len) {
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+  
+  iunlockput(ip);
+  end_op();
+
+  return 0;
+}
+
 // Is the directory dp empty except for "." and ".." ?
 static int
 isdirempty(struct inode *dp)
@@ -283,6 +317,62 @@ create(char *path, short type, short major, short minor)
   return ip;
 }
 
+// int opensymlink(char* path, struct inode* ip_out, int level) {
+int opensymlink(char* path, struct inode** ip_out, int level) {
+  if (level == 10) return -1;
+
+  // begin_op();
+
+  struct inode* ip;
+  if ((ip = namei(path)) == 0) {
+    // end_op();
+    return -1;
+  }
+
+  ilock(ip);
+  if (ip->type == T_SYMLINK) {
+    char nextpath[MAXPATH];
+    memset(nextpath, 0, sizeof(nextpath));
+    if (readi(ip, 0, (uint64)nextpath, 0, ip->size) != ip->size) {
+      panic("open: readi fail!");
+      iunlockput(ip);
+      // end_op();
+      return -1;
+    }
+
+    // struct inode* ip_next = 0;
+    // int rn = opensymlink(nextpath, &ip_next, level + 1);
+    // *ip_out = ip_next;
+
+    // iunlockput(ip);
+    // end_op();
+    // return rn;
+
+    //modified to this to avoid deadlock when a cyclic symlink hanppen
+    struct inode* ip_next = 0;
+
+    iunlockput(ip);
+    int rn = opensymlink(nextpath, &ip_next, level + 1);
+    *ip_out = ip_next;
+
+    // end_op();
+    return rn;
+    
+  }
+  else if (ip->type == T_FILE) {
+    *ip_out = ip;
+    iunlockput(ip);
+    // end_op();
+
+    return 0;
+  }
+  else {
+    iunlockput(ip);
+    // end_op();
+    return -1;
+  }
+}
+
 uint64
 sys_open(void)
 {
@@ -309,12 +399,46 @@ sys_open(void)
       return -1;
     }
     ilock(ip);
+
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
       end_op();
       return -1;
     }
+
+    if (ip->type == T_SYMLINK && (omode & O_NOFOLLOW)) {
+      //donothing
+    }
+    else if (ip->type == T_SYMLINK && (omode & O_NOFOLLOW) == 0) {
+      char nextpath[MAXPATH];
+      memset(nextpath, 0, sizeof(nextpath));
+      if (readi(ip, 0, (uint64)nextpath, 0, ip->size) != ip->size) {
+        panic("open: readi fail!");
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+
+      // struct inode *ip_out = 0; //here should unlock ip first
+      // int rn = opensymlink(nextpath, &ip_out, 1);
+      // iunlockput(ip);
+      // end_op();
+
+      //modified to this
+      struct inode *ip_out = 0;
+      iunlockput(ip);
+      int rn = opensymlink(nextpath, &ip_out, 1);
+      end_op();
+
+      if (rn != 0) return rn;
+      ip = ip_out;
+      begin_op();
+      ilock(ip);
+
+    }
   }
+
+  
 
   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
     iunlockput(ip);
